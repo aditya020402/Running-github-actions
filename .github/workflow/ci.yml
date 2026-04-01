@@ -1,0 +1,43 @@
+name: Continous Integration Workflow
+
+on: 
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "web/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+
+jobs:
+  test:
+    name: 'Run unit test'
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        name: 'Checkout Repository'
+      - name: 'Install dependency'
+        run: npm install
+      - name: 'Run Test'
+        run: npm run test
+  
+  lint:
+    name: 'Run linting'
+    default:
+      shell: bash
+      wworking-directory: ./web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        name: 'Checkout Repository'
+      - name: 'Install Dependecy'
+        run: npm install
+      - name: 'Run Linting'
+        run: npx standard -v
