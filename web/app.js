@@ -38,4 +38,6 @@ app.use(function (err, req, res, next) {
   res.render('error')
 })
 
+// moved the app.listen code to server file to start the server and listen on port 3000
+
 module.exports = app
