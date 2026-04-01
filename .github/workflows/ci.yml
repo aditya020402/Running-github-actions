@@ -30,9 +30,10 @@ jobs:
   
   lint:
     name: 'Run linting'
-    default:
-      shell: bash
-      wworking-directory: ./web
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
