@@ -1,0 +1,27 @@
+{
+  "name": "web",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "lint": "npx standard --fix",
+    "test": "jest --detectOpenHandles"
+  },
+  "keywords": [],
+  "author": "Aditya Sharma",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "debug": "^4.4.3",
+    "express": "^5.2.1",
+    "jade": "^1.11.0",
+    "morgan": "^1.10.1"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "standard": "^17.1.2",
+    "supertest": "^7.2.2"
+  }
+}
