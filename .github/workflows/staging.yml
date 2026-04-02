@@ -9,6 +9,7 @@ on:
 
 jobs:
   create:
+    environment: staging-pr
     name: 'Create staging and deploy'
     defaults:
       run:
@@ -49,9 +50,7 @@ jobs:
           }
 
     - uses: actions/checkout@v6
-      name: 'Checkout repository and infra branch'
-      with:
-        ref: infra
+      name: 'Checkout repository and use the infra folder'
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v4
@@ -67,14 +66,14 @@ jobs:
 
     - name: 'Create staging environment resource file'
       id: create_resource_file
-      working-directory: infra/instances/staging-pr/
+      working-directory: infra/staging-pr/
       run: |
         OUTPUT="$(./create_staging_resource.sh PR_${{ github.event.inputs.PR_number }} | jq -r .terraform_expected_output)"
         echo "::set-output name=STAGING_RESOURCE_NAME::$OUTPUT"
         
     - name: Terraform Init and Validate
       id: init
-      working-directory: infra/instances/staging/
+      working-directory: infra/staging-pr/
       run: |
         terraform init
         terraform validate -no-color
@@ -82,7 +81,7 @@ jobs:
     - name: Terraform Plan
       id: plan
       run: terraform plan -no-color
-      working-directory: infra/instances/staging/
+      working-directory: infra/staging-pr/
       continue-on-error: true
     
     # ======================================================
@@ -122,37 +121,17 @@ jobs:
 
     - name: Terraform Apply
       id: apply
-      working-directory: infra/instances/staging/
+      working-directory: infra/staging-pr/
       run: terraform apply -auto-approve
       
     - name: Terraform Output
       id: apply_output
-      working-directory: infra/instances/staging/
+      working-directory: infra/staging-pr/
       run: terraform output -raw -no-color ${{ steps.create_resource_file.outputs.STAGING_RESOURCE_NAME }}
     
-    # ======================================================
-    # If everything goes well and the Terraform Plan was
-    # executed successfully, and the resources were created
-    # we need to commit the new resource file and push it
-    # to the infra branch.
-    # 
-    # If we don't do this, everytime this workflow runs
-    # it will destroy the resources created by previous
-    # runs. We need to persist the state in the repository
-    # for this to work.
-    # 
-    # Here we use a neat little trick:
-    # git commit -m "Add terraform resource files" && \
-    #      git push || echo "Nothing to commit"
-    #
-    # git push will fail with a non-zero exit if there 
-    # are no changes to commit and this will cause the workflow
-    # to fail. We don't want that. We can use the `|| echo`
-    # to print "Nothing to commit" to the console if 
-    # git push fails.
-    # ======================================================
+
     - name: Commit terraform resource files to the PR
-      working-directory: infra/instances/staging/
+      working-directory: infra/staging-pr/
       run: |
         git config --global user.name '${{ github.actor }}'
         git config --global user.email '${{ github.actor}}@users.noreply.github.com'

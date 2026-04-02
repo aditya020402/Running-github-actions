@@ -1,5 +1,4 @@
 terraform {
-
   backend "s3" {
     bucket       = "s3-native-lock-setup-important"
     key          = "staging-pr/terraform.tfstate"
@@ -29,7 +28,7 @@ provider "aws" {
 }
 
 variable "staging_pr_public_key" {
-  description = "Staging pr environment public key value"
+  description = "Staging environment public key value"
   type        = string
 }
 
@@ -48,7 +47,7 @@ resource "random_id" "server" {
 }
 
 resource "aws_key_pair" "staging_pr_key" {
-  key_name   = "staging-key"
+  key_name   = "staging-pr-key"
   public_key = var.staging_pr_public_key
 
   tags = {
@@ -67,7 +66,7 @@ resource "aws_instance" "staging_pr_cicd_demo" {
   key_name               = aws_key_pair.staging_pr_key.key_name
 
   tags = {
-    "Name" = "staging_pr_cicd_demo-${random_id.server.hex}"
+    "Name" = "staging_cicd_demo-${random_id.server.hex}"
   }
 }
 
