@@ -1,0 +1,77 @@
+# This workflow is triggered whenever commits are pushed to the main branch
+name: Continuous Deployment Workflow
+
+on:
+  push:
+    branches:
+      - 'main'
+    paths:
+      - 'web/**'
+  workflow_dispatch:
+
+defaults:
+    run:
+        working-directory: ./web
+        shell: bash
+
+jobs:
+    deploy_staging:
+        environment: staging
+        name: 'Deploy to staging'
+        runs-on: ubuntu-latest
+        steps:
+        -   uses: actions/checkout@v6
+            name: 'Checkout repository'
+
+        -   uses: burnett01/rsync-deployments@v8
+            name: 'Deploy to staging'
+            with:
+                switches: -avzr --delete
+                path: ./web
+                remote_path: /var/app
+                remote_host: ${{ secrets.HOSTNAME }}
+                remote_user: ${{ secrets.REMOTE_USER }}
+                remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+        
+        -   uses: JimCronqvist/action-ssh@master
+            name: Execute SSH commmands on remote server
+            with:
+                hosts: '${{ secrets.REMOTE_USER }}@${{ secrets.HOSTNAME }}'
+                privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+                command: |
+                    cd /var/app/web
+                    npm ci
+                    pm2 start npm --name "web-app" -- start || pm2 restart web-app
+                    sudo service nginx restart
+
+    deploy_production:
+        environment: production
+        name: 'Deploy to production'
+        runs-on: ubuntu-latest
+        needs: deploy_staging
+        
+        steps:
+    
+        - uses: actions/checkout@v6
+          name: 'Checkout repository'
+
+        - uses: burnett01/rsync-deployments@v8
+          name: 'Deploy to production'
+          with:
+            switches: -avzr --delete
+            path: ./web
+            remote_path: /var/app
+            remote_host: ${{ secrets.HOSTNAME }}
+            remote_user: ${{ secrets.REMOTE_USER }}
+            remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+    
+        - uses: JimCronqvist/action-ssh@master
+          name: Execute SSH commmands on remote server
+          with:
+            hosts: '${{ secrets.REMOTE_USER }}@${{ secrets.HOSTNAME }}'
+            privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
+            command: |
+                cd /var/app/web
+                npm ci
+                pm2 start npm --name "web-app" -- start || pm2 restart web-app
+                sudo service nginx restart
