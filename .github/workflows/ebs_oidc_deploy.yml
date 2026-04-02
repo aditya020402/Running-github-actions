@@ -1,0 +1,68 @@
+name: Continuous Deployment Workflow (Elastic Beanstalk)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # REQUIRED for OIDC
+  contents: read
+
+defaults:
+  run:
+    working-directory: ./web
+    shell: bash
+
+
+env:
+  APPLICATION_NAME: snow-flake
+  PRODUCTION_ENV: snow-flake-env-prod   # change if different
+  AWS_REGION: us-east-2
+
+jobs:
+    deploy_production:
+        name: Deploy to Production (EB)
+        runs-on: ubuntu-latest
+        steps:
+        - name: 'Code checkout'  
+          uses: actions/checkout@v6
+
+        - name: Configure AWS Credentials
+          uses: aws-actions/configure-aws-credentials@v4
+          with:
+            role-to-assume: arn:aws:iam::515105386926:oidc-provider/token.actions.githubusercontent.com
+
+        - name: Get AWS Account ID
+          run: |
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+
+        - name: Zip application
+          run: |
+            zip -r app.zip .
+
+        - name: Upload to S3
+          run: |
+            BUCKET="elasticbeanstalk-us-east-2-515105386926"
+            KEY="prod-${{ github.sha }}.zip"
+
+            aws s3 cp app.zip s3://$BUCKET/$KEY
+
+            echo "S3_KEY=$KEY" >> $GITHUB_ENV
+
+        - name: Create EB Version
+          run: |
+            aws elasticbeanstalk create-application-version \
+            --application-name $APPLICATION_NAME \
+            --version-label prod-${{ github.sha }} \
+            --source-bundle S3Bucket=elasticbeanstalk-${AWS_REGION}-${ACCOUNT_ID},S3Key=$S3_KEY
+
+        - name: Deploy to Production
+          run: |
+            aws elasticbeanstalk update-environment \
+            --environment-name $PRODUCTION_ENV \
+            --version-label prod-${{ github.sha }}
