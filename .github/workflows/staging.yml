@@ -1,207 +1,114 @@
-name: Create Dev Staging Environment
+name: Staging PR Infra
 
 on:
-  workflow_dispatch:
-    inputs:
-      PR_number:
-        description: 'Pull request number'
-        required: true
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
-  create:
-    environment: staging-pr
-    name: 'Create staging and deploy'
-    defaults:
-      run:
-        shell: bash
-    
+  terraform:
     runs-on: ubuntu-latest
-    
+
+    env:
+      AWS_REGION: us-east-2
+
     steps:
+      # ✅ Checkout code
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    # ======================================================
-    # It's important to check that the PR number 
-    # provided as input is valid and belongs to 
-    # the repository.
-    # 
-    # This will also return the PR's branch as an output
-    # which can be fetched in next steps via:
-    # ${{ steps.verify_pr_number.outputs.result }}
-    # ======================================================
-    - name: Verify Pull Request Number
-      uses: actions/github-script@v8
-      id: verify_pr_number
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        result-encoding: string
-        script: |
-          const response = await github.rest.pulls.get({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: ${{ github.event.inputs.PR_number }}
-          });
-          
-          // Check if the pull request is open
-          if (response.data.number !== ${{ github.event.inputs.PR_number }}) {
-            throw new Error('Pull request is not open or number is not valid!');
-          } else {
-            console.log("PR ref: " + response.data.head.ref);
-            return response.data.head.ref;
-          }
+      # ✅ Setup Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-    - uses: actions/checkout@v6
-      name: 'Checkout repository and use the infra folder'
+      # ✅ Configure AWS credentials
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v4
-      with:
-        terraform_version: 1.14.6
+      # ✅ Generate dynamic staging tf file
+      - name: Create staging resource file
+        id: generate
+        run: |
+          OUTPUT=$(./create_staging_resource.sh)
+          echo "$OUTPUT"
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-2
+          RESOURCE_FILE=$(echo $OUTPUT | jq -r '.resource_file')
+          TF_OUTPUT=$(echo $OUTPUT | jq -r '.terraform_expected_output')
 
-    - name: Make script executable
-      run: chmod +x create_staging_resource.sh
-      working-directory: infra/staging-pr/
+          RESOURCE_ID=$(echo $RESOURCE_FILE | sed 's/extra_staging_//;s/.tf//')
 
-    - name: 'Create staging environment resource file'
-      id: create_resource_file
-      working-directory: infra/staging-pr/
-      run: |
-        OUTPUT="$(./create_staging_resource.sh PR_${{ github.event.inputs.PR_number }} | jq -r .terraform_expected_output)"
-        echo "::set-output name=STAGING_RESOURCE_NAME::$OUTPUT"
-        
-    - name: Terraform Init and Validate
-      id: init
-      working-directory: infra/staging-pr/
-      run: |
-        terraform init
-        terraform validate -no-color
+          echo "RESOURCE_FILE=$RESOURCE_FILE" >> $GITHUB_ENV
+          echo "TF_OUTPUT=$TF_OUTPUT" >> $GITHUB_ENV
+          echo "RESOURCE_ID=$RESOURCE_ID" >> $GITHUB_ENV
 
-    - name: Terraform Plan
-      id: plan
-      run: terraform plan -no-color
-      working-directory: infra/staging-pr/
-      continue-on-error: true
-    
-    # ======================================================
-    # Once Terraform Plan is completed we need to update
-    # the PR with the results of the plan
-    # ======================================================
-    - name: Update Pull Request
-      uses: actions/github-script@v8
-      env:
-        PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const output = `#### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+      # ✅ Terraform Init (you can later make backend key dynamic here)
+      - name: Terraform Init
+        run: |
+          terraform init
 
-          <details><summary>Show Plan</summary>
+      # ✅ Terraform Plan (capture logs)
+      - name: Terraform Plan
+        id: plan
+        continue-on-error: true
+        run: |
+          terraform plan \
+            -var="staging_pr_public_key=${{ secrets.PUBLIC_KEY }}" \
+            -var="base_ami_id=${{ secrets.AMI_ID }}" \
+            -out=tfplan 2>&1 | tee terraform.log
 
-          \`\`\`\n
-          ${process.env.PLAN}
-          \`\`\`
+      # 🔥 Handle stale lock automatically
+      - name: Force Unlock if Needed
+        if: steps.plan.outcome == 'failure'
+        run: |
+          echo "Terraform failed. Checking for lock..."
 
-          </details>
+          LOCK_ID=$(grep -A 10 "Lock Info:" terraform.log | grep "ID:" | awk '{print $2}')
 
-          *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+          if [ -z "$LOCK_ID" ]; then
+            echo "No lock ID found. Failing..."
+            exit 1
+          fi
 
-          github.rest.issues.createComment({
-            issue_number: ${{ github.event.inputs.PR_number }},
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: output
-          })
-          
-    - name: Terraform Plan Status
-      if: steps.plan.outcome == 'failure'
-      run: exit 1
+          echo "Force unlocking state: $LOCK_ID"
+          terraform force-unlock -force $LOCK_ID
 
-    - name: Terraform Apply
-      id: apply
-      working-directory: infra/staging-pr/
-      run: terraform apply -auto-approve
-      
-    - name: Terraform Output
-      id: apply_output
-      working-directory: infra/staging-pr/
-      run: terraform output -raw -no-color ${{ steps.create_resource_file.outputs.STAGING_RESOURCE_NAME }}
-    
+      # 🔁 Retry Plan after unlock
+      - name: Retry Terraform Plan
+        if: steps.plan.outcome == 'failure'
+        run: |
+          terraform plan \
+            -var="staging_pr_public_key=${{ secrets.PUBLIC_KEY }}" \
+            -var="base_ami_id=${{ secrets.AMI_ID }}" \
+            -out=tfplan
 
-    - name: Commit terraform resource files to the PR
-      working-directory: infra/staging-pr/
-      run: |
-        git config --global user.name '${{ github.actor }}'
-        git config --global user.email '${{ github.actor}}@users.noreply.github.com'
-        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-        git add ./\*.tf
-        git commit -m "Add terraform resource files" && \
-          git push || echo "Nothing to commit"
+      # ✅ Apply
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
 
-    # ======================================================
-    # Checkout the PR branch so that we can deploy it
-    # ======================================================
-    - uses: actions/checkout@v6
-      name: 'Checkout PR branch'
-      with:
-        ref: ${{ steps.verify_pr_number.outputs.result }}
+      # ✅ Extract output
+      - name: Get Output
+        id: output
+        run: |
+          DNS=$(terraform output -raw staging_pr_dns || true)
+          echo "DNS=$DNS" >> $GITHUB_ENV
 
-    # ======================================================
-    # We sync the files in this directory to the staging
-    # server. We use the `rsync` command to do this.
-    # ======================================================
-    - uses: burnett01/rsync-deployments@v8
-      name: 'Deploy to staging'
-      with:
-        switches: -avzr --delete
-        path: ./web
-        remote_path: /var/app
-        remote_host: ${{ steps.apply_output.outputs.stdout }}
-        remote_user: ${{ secrets.REMOTE_USER }}
-        remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
-    
-    # ======================================================
-    # Once we have the new files synced to the staging server
-    # we need to restart the staging server.
-    # ======================================================
-    - uses: JimCronqvist/action-ssh@master
-      name: Execute SSH commmands on remote server
-      with:
-        hosts: '${{ secrets.REMOTE_USER }}@${{ steps.apply_output.outputs.stdout }}'
-        privateKey: ${{ secrets.SSH_PRIVATE_KEY }}
-        command: |
-            cd /var/app/web
-            npm ci
-            pm2 start npm --name "web-app" -- start || pm2 restart web-app
-            sudo service nginx restart
-    
-    # ======================================================
-    # When we're done, we need to update the PR one more time
-    # with the results of the apply.
-    # ======================================================      
-    - name: Update status
-      uses: actions/github-script@v8
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const output = `#### Staging server created
-          > PR #${{ github.event.inputs.PR_number }} has been deployed successfully
-          
-          URL: http://${{ steps.apply_output.outputs.stdout }}`;
-
-          github.rest.issues.createComment({
-            issue_number: ${{ github.event.inputs.PR_number }},
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: output
-          })
-    
-    - name: Setup tmate session
-      if: ${{ failure() }}
-      uses: mxschmitt/action-tmate@v3
+      # ✅ Comment on PR
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const dns = process.env.DNS || "Not available";
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 Staging environment ready:\n\n🌐 ${dns}`
+            })
