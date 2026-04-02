@@ -3,7 +3,6 @@ terraform {
     bucket       = "s3-native-lock-setup-important"
     key          = "staging-pr/terraform.tfstate"
     region       = "us-east-1"
-    profile      = "default"
     use_lockfile = true
   }
 
@@ -23,8 +22,7 @@ terraform {
 }
 
 provider "aws" {
-  profile = "default"
-  region  = "us-east-2"
+  region = "us-east-2"
 }
 
 variable "staging_pr_public_key" {
