@@ -221,3 +221,9 @@ tags
 
 #Remove pushing public certificate
 *.pub
+*.key
+*.pem
+
+id_staging_pr_cicd
+id_staging_cicd
+id_production_cicd
