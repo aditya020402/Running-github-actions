@@ -224,6 +224,9 @@ tags
 *.key
 *.pem
 
-id_staging_pr_cicd
-id_staging_cicd
-id_production_cicd
+infra/staging/id_staging_cicd
+infra/staging/id_staging_cicd.pub
+infra/staging/id_staging_pr_cicd
+infra/staging/id_staging_pr_cicd.pub
+infra/staging/id_prod_cicd
+infra/staging/id_prod_cicd.pub
