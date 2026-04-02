@@ -33,7 +33,7 @@ jobs:
         - name: Configure AWS Credentials
           uses: aws-actions/configure-aws-credentials@v4
           with:
-            role-to-assume: arn:aws:iam::515105386926:oidc-provider/token.actions.githubusercontent.com
+            role-to-assume: arn:aws:iam::515105386926:role/github-actions-eb-deploy-role
 
         - name: Get AWS Account ID
           run: |
