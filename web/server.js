@@ -1,4 +1,4 @@
-const { app } = require('./app.js')
+const app = require('./app.js')
 
 // the app is listening on a fixed port
 app.listen(3000, () => {
