@@ -20,7 +20,6 @@ defaults:
 
 env:
   APPLICATION_NAME: snow-flake
-  PRODUCTION_ENV: snow-flake-env-prod   # change if different
   AWS_REGION: us-east-2
 
 jobs:
@@ -61,8 +60,8 @@ jobs:
             --version-label prod-${{ github.sha }} \
             --source-bundle S3Bucket=elasticbeanstalk-${AWS_REGION}-${ACCOUNT_ID},S3Key=$S3_KEY
 
-        - name: Deploy to Production
+        - name: Deploy
           run: |
             aws elasticbeanstalk update-environment \
-            --environment-name $PRODUCTION_ENV \
+            --environment-name snow-flake-env \
             --version-label prod-${{ github.sha }}
