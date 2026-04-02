@@ -64,6 +64,10 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-2
 
+    - name: Make script executable
+      run: chmod +x create_staging_resource.sh
+      working-directory: infra/staging-pr/
+
     - name: 'Create staging environment resource file'
       id: create_resource_file
       working-directory: infra/staging-pr/
