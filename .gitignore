@@ -226,7 +226,7 @@ tags
 
 infra/staging/id_staging_cicd
 infra/staging/id_staging_cicd.pub
-infra/staging/id_staging_pr_cicd
-infra/staging/id_staging_pr_cicd.pub
-infra/staging/id_prod_cicd
-infra/staging/id_prod_cicd.pub
+infra/staging-pr/id_staging_pr_cicd
+infra/staging-pr/id_staging_pr_cicd.pub
+infra/production/id_prod_cicd
+infra/production/id_prod_cicd.pub
